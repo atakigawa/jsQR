@@ -359,6 +359,7 @@ function scan(matrix) {
 }
 var defaultOptions = {
     inversionAttempts: "attemptBoth",
+    canOverwriteImage: true,
 };
 function jsQR(data, width, height, providedOptions) {
     if (providedOptions === void 0) { providedOptions = {}; }
@@ -368,7 +369,7 @@ function jsQR(data, width, height, providedOptions) {
     });
     var shouldInvert = options.inversionAttempts === "attemptBoth" || options.inversionAttempts === "invertFirst";
     var tryInvertedFirst = options.inversionAttempts === "onlyInvert" || options.inversionAttempts === "invertFirst";
-    var _a = binarizer_1.binarize(data, width, height, shouldInvert), binarized = _a.binarized, inverted = _a.inverted;
+    var _a = binarizer_1.binarize(data, width, height, shouldInvert, options.canOverwriteImage), binarized = _a.binarized, inverted = _a.inverted;
     var result = scan(tryInvertedFirst ? inverted : binarized);
     if (!result && (options.inversionAttempts === "attemptBoth" || options.inversionAttempts === "invertFirst")) {
         result = scan(tryInvertedFirst ? binarized : inverted);
@@ -394,9 +395,15 @@ function numBetween(value, min, max) {
 }
 // Like BitMatrix but accepts arbitry Uint8 values
 var Matrix = /** @class */ (function () {
-    function Matrix(width, height) {
+    function Matrix(width, height, buffer) {
+        if (buffer === void 0) { buffer = null; }
         this.width = width;
-        this.data = new Uint8ClampedArray(width * height);
+        if (buffer !== null) {
+            this.data = buffer;
+        }
+        else {
+            this.data = new Uint8ClampedArray(width * height);
+        }
     }
     Matrix.prototype.get = function (x, y) {
         return this.data[y * this.width + x];
@@ -406,31 +413,47 @@ var Matrix = /** @class */ (function () {
     };
     return Matrix;
 }());
-function binarize(data, width, height, returnInverted) {
-    if (data.length !== width * height * 4) {
+function binarize(data, width, height, returnInverted, canOverwriteImage) {
+    var pixelCount = width * height;
+    if (data.length !== pixelCount * 4) {
         throw new Error("Malformed data passed to binarizer.");
     }
+    var bufferOffset = 0;
+    var greyscaleBuffer = null;
+    if (canOverwriteImage) {
+        // uses 1/4 of the original buffer
+        greyscaleBuffer = new Uint8ClampedArray(data.buffer, bufferOffset, pixelCount);
+        bufferOffset += pixelCount;
+    }
     // Convert image to greyscale
-    var greyscalePixels = new Matrix(width, height);
+    var greyscalePixels = new Matrix(width, height, greyscaleBuffer);
     for (var x = 0; x < width; x++) {
         for (var y = 0; y < height; y++) {
-            var r = data[((y * width + x) * 4) + 0];
-            var g = data[((y * width + x) * 4) + 1];
-            var b = data[((y * width + x) * 4) + 2];
+            var idx = (y * width + x) * 4;
+            var r = data[idx + 0];
+            var g = data[idx + 1];
+            var b = data[idx + 2];
             greyscalePixels.set(x, y, 0.2126 * r + 0.7152 * g + 0.0722 * b);
         }
     }
     var horizontalRegionCount = Math.ceil(width / REGION_SIZE);
     var verticalRegionCount = Math.ceil(height / REGION_SIZE);
-    var blackPoints = new Matrix(horizontalRegionCount, verticalRegionCount);
+    var blackPointsCount = horizontalRegionCount * verticalRegionCount;
+    var blackPointsBuffer = null;
+    if (canOverwriteImage) {
+        // uses 1/32 of the original buffer
+        blackPointsBuffer = new Uint8ClampedArray(data.buffer, bufferOffset, blackPointsCount);
+        bufferOffset += blackPointsCount;
+    }
+    var blackPoints = new Matrix(horizontalRegionCount, verticalRegionCount, blackPointsBuffer);
     for (var verticalRegion = 0; verticalRegion < verticalRegionCount; verticalRegion++) {
-        for (var hortizontalRegion = 0; hortizontalRegion < horizontalRegionCount; hortizontalRegion++) {
+        for (var horizontalRegion = 0; horizontalRegion < horizontalRegionCount; horizontalRegion++) {
             var sum = 0;
             var min = Infinity;
             var max = 0;
             for (var y = 0; y < REGION_SIZE; y++) {
                 for (var x = 0; x < REGION_SIZE; x++) {
-                    var pixelLumosity = greyscalePixels.get(hortizontalRegion * REGION_SIZE + x, verticalRegion * REGION_SIZE + y);
+                    var pixelLumosity = greyscalePixels.get(horizontalRegion * REGION_SIZE + x, verticalRegion * REGION_SIZE + y);
                     sum += pixelLumosity;
                     min = Math.min(min, pixelLumosity);
                     max = Math.max(max, pixelLumosity);
@@ -444,32 +467,49 @@ function binarize(data, width, height, returnInverted) {
                 //
                 // Default the blackpoint for these blocks to be half the min - effectively white them out
                 average = min / 2;
-                if (verticalRegion > 0 && hortizontalRegion > 0) {
+                if (verticalRegion > 0 && horizontalRegion > 0) {
                     // Correct the "white background" assumption for blocks that have neighbors by comparing
                     // the pixels in this block to the previously calculated black points. This is based on
                     // the fact that dark barcode symbology is always surrounded by some amount of light
                     // background for which reasonable black point estimates were made. The bp estimated at
                     // the boundaries is used for the interior.
                     // The (min < bp) is arbitrary but works better than other heuristics that were tried.
-                    var averageNeighborBlackPoint = (blackPoints.get(hortizontalRegion, verticalRegion - 1) +
-                        (2 * blackPoints.get(hortizontalRegion - 1, verticalRegion)) +
-                        blackPoints.get(hortizontalRegion - 1, verticalRegion - 1)) / 4;
+                    var averageNeighborBlackPoint = (blackPoints.get(horizontalRegion, verticalRegion - 1) +
+                        (2 * blackPoints.get(horizontalRegion - 1, verticalRegion)) +
+                        blackPoints.get(horizontalRegion - 1, verticalRegion - 1)) / 4;
                     if (min < averageNeighborBlackPoint) {
                         average = averageNeighborBlackPoint;
                     }
                 }
             }
-            blackPoints.set(hortizontalRegion, verticalRegion, average);
+            blackPoints.set(horizontalRegion, verticalRegion, average);
         }
     }
-    var binarized = BitMatrix_1.BitMatrix.createEmpty(width, height);
+    var binarized = null;
+    if (canOverwriteImage) {
+        // uses 1/4 of the original buffer
+        var binarizedBuffer = new Uint8ClampedArray(data.buffer, bufferOffset, pixelCount);
+        bufferOffset += pixelCount;
+        binarized = new BitMatrix_1.BitMatrix(binarizedBuffer, width);
+    }
+    else {
+        binarized = BitMatrix_1.BitMatrix.createEmpty(width, height);
+    }
     var inverted = null;
     if (returnInverted) {
-        inverted = BitMatrix_1.BitMatrix.createEmpty(width, height);
+        if (canOverwriteImage) {
+            // uses 1/4 of the original buffer
+            var invertedBuffer = new Uint8ClampedArray(data.buffer, bufferOffset, pixelCount);
+            bufferOffset += pixelCount;
+            inverted = new BitMatrix_1.BitMatrix(invertedBuffer, width);
+        }
+        else {
+            inverted = BitMatrix_1.BitMatrix.createEmpty(width, height);
+        }
     }
     for (var verticalRegion = 0; verticalRegion < verticalRegionCount; verticalRegion++) {
-        for (var hortizontalRegion = 0; hortizontalRegion < horizontalRegionCount; hortizontalRegion++) {
-            var left = numBetween(hortizontalRegion, 2, horizontalRegionCount - 3);
+        for (var horizontalRegion = 0; horizontalRegion < horizontalRegionCount; horizontalRegion++) {
+            var left = numBetween(horizontalRegion, 2, horizontalRegionCount - 3);
             var top_1 = numBetween(verticalRegion, 2, verticalRegionCount - 3);
             var sum = 0;
             for (var xRegion = -2; xRegion <= 2; xRegion++) {
@@ -480,7 +520,7 @@ function binarize(data, width, height, returnInverted) {
             var threshold = sum / 25;
             for (var xRegion = 0; xRegion < REGION_SIZE; xRegion++) {
                 for (var yRegion = 0; yRegion < REGION_SIZE; yRegion++) {
-                    var x = hortizontalRegion * REGION_SIZE + xRegion;
+                    var x = horizontalRegion * REGION_SIZE + xRegion;
                     var y = verticalRegion * REGION_SIZE + yRegion;
                     var lum = greyscalePixels.get(x, y);
                     binarized.set(x, y, lum <= threshold);
@@ -491,6 +531,8 @@ function binarize(data, width, height, returnInverted) {
             }
         }
     }
+    greyscaleBuffer = null;
+    blackPointsBuffer = null;
     if (returnInverted) {
         return { binarized: binarized, inverted: inverted };
     }

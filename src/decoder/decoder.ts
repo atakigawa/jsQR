@@ -285,7 +285,7 @@ function getDataBlocks(codewords: number[], version: Version, ecLevel: number) {
   return dataBlocks;
 }
 
-function decodeMatrix(matrix: BitMatrix) {
+function decodeMatrix(matrix: BitMatrix): DecodedQR {
   const version = readVersion(matrix);
   if (!version) {
     return null;
