@@ -1,6 +1,5 @@
 // tslint:disable:no-bitwise
 import { BitStream } from "./BitStream";
-import { shiftJISTable } from "./shiftJISTable";
 
 export interface Chunk {
   type: Mode;
@@ -145,29 +144,6 @@ function decodeByte(stream: BitStream, size: number) {
   return { bytes, text };
 }
 
-function decodeKanji(stream: BitStream, size: number) {
-  const bytes: number[] = [];
-  let text = "";
-
-  const characterCountSize = [8, 10, 12][size];
-  const length = stream.readBits(characterCountSize);
-  for (let i = 0; i < length; i++) {
-    const k = stream.readBits(13);
-
-    let c = (Math.floor(k / 0xC0) << 8) | (k % 0xC0);
-    if (c < 0x1F00) {
-      c += 0x8140;
-    } else {
-      c += 0xC140;
-    }
-
-    bytes.push(c >> 8, c & 0xFF);
-    text += String.fromCharCode(shiftJISTable[c]);
-  }
-
-  return { bytes, text };
-}
-
 export function decode(data: Uint8ClampedArray, version: number): DecodedQR {
   const stream = new BitStream(data);
 
@@ -231,15 +207,6 @@ export function decode(data: Uint8ClampedArray, version: number): DecodedQR {
         type: Mode.Byte,
         bytes: byteResult.bytes,
         text: byteResult.text,
-      });
-    } else if (mode === ModeByte.Kanji) {
-      const kanjiResult = decodeKanji(stream, size);
-      result.text += kanjiResult.text;
-      result.bytes.push(...kanjiResult.bytes);
-      result.chunks.push({
-        type: Mode.Kanji,
-        bytes: kanjiResult.bytes,
-        text: kanjiResult.text,
       });
     }
   }
