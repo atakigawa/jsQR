@@ -25,7 +25,7 @@ export async function loadPng(path) {
     height: number,
     width: number,
   } = {
-    data: png.toRGBA8(data),
+    data: new Uint8ClampedArray(png.toRGBA8(data)[0]),
     height: data.height,
     width: data.width,
   };
