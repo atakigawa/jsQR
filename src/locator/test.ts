@@ -82,7 +82,7 @@ describe("locate", () => {
 
   it("returns a centered alignment as a fallback", async () => {
     const binarized = await loadBinarized("./src/locator/test-data/odd-skew.png");
-    expect(locate(binarized)[1]).toEqual({
+    expect(locate(binarized, true)[1]).toEqual({
       alignmentPattern: { x: 163.5, y: 170 },
       bottomLeft: { x: 56.5, y: 185.5 },
       dimension: 29,

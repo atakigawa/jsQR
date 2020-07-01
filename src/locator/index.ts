@@ -249,7 +249,7 @@ interface Quad {
   };
 }
 
-export function locate(matrix: BitMatrix): QRLocation[] {
+export function locate(matrix: BitMatrix, tryHarder: boolean = false): QRLocation[] {
   const finderPatternQuads: Quad[] = [];
   let activeFinderPatternQuads: Quad[] = [];
   const alignmentPatternQuads: Quad[] = [];
@@ -397,23 +397,25 @@ export function locate(matrix: BitMatrix): QRLocation[] {
     });
   }
 
-  // We normally use the center of the quads as the location of the tracking points, which is optimal for most cases and will account
-  // for a skew in the image. However, In some cases, a slight skew might not be real and instead be caused by image compression
-  // errors and/or low resolution. For those cases, we'd be better off centering the point exactly in the middle of the black area. We
-  // compute and return the location data for the naively centered points as it is little additional work and allows for multiple
-  // attempts at decoding harder images.
-  const midTopRight = recenterLocation(matrix, topRight);
-  const midTopLeft = recenterLocation(matrix, topLeft);
-  const midBottomLeft = recenterLocation(matrix, bottomLeft);
-  const centeredAlignment = findAlignmentPattern(matrix, alignmentPatternQuads, midTopRight, midTopLeft, midBottomLeft);
-  if (centeredAlignment) {
-    result.push({
-      alignmentPattern: { x: centeredAlignment.alignmentPattern.x, y: centeredAlignment.alignmentPattern.y },
-      bottomLeft: { x: midBottomLeft.x, y: midBottomLeft. y },
-      topLeft: { x: midTopLeft.x, y: midTopLeft. y },
-      topRight: { x: midTopRight.x, y: midTopRight. y },
-      dimension: centeredAlignment.dimension,
-    });
+  if (tryHarder) {
+    // We normally use the center of the quads as the location of the tracking points, which is optimal for most cases and will account
+    // for a skew in the image. However, In some cases, a slight skew might not be real and instead be caused by image compression
+    // errors and/or low resolution. For those cases, we'd be better off centering the point exactly in the middle of the black area. We
+    // compute and return the location data for the naively centered points as it is little additional work and allows for multiple
+    // attempts at decoding harder images.
+    const midTopRight = recenterLocation(matrix, topRight);
+    const midTopLeft = recenterLocation(matrix, topLeft);
+    const midBottomLeft = recenterLocation(matrix, bottomLeft);
+    const centeredAlignment = findAlignmentPattern(matrix, alignmentPatternQuads, midTopRight, midTopLeft, midBottomLeft);
+    if (centeredAlignment) {
+      result.push({
+        alignmentPattern: { x: centeredAlignment.alignmentPattern.x, y: centeredAlignment.alignmentPattern.y },
+        bottomLeft: { x: midBottomLeft.x, y: midBottomLeft. y },
+        topLeft: { x: midTopLeft.x, y: midTopLeft. y },
+        topRight: { x: midTopRight.x, y: midTopRight. y },
+        dimension: centeredAlignment.dimension,
+      });
+    }
   }
 
   if (result.length === 0) {
