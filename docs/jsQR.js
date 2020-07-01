@@ -414,6 +414,7 @@ var Matrix = /** @class */ (function () {
     return Matrix;
 }());
 function binarize(data, width, height, returnInverted, canOverwriteImage) {
+    if (canOverwriteImage === void 0) { canOverwriteImage = true; }
     var pixelCount = width * height;
     if (data.length !== pixelCount * 4) {
         throw new Error("Malformed data passed to binarizer.");
@@ -2887,7 +2888,8 @@ function recenterLocation(matrix, p) {
     var y = (topY + bottomY) / 2;
     return { x: x, y: y };
 }
-function locate(matrix) {
+function locate(matrix, tryHarder) {
+    if (tryHarder === void 0) { tryHarder = false; }
     var finderPatternQuads = [];
     var activeFinderPatternQuads = [];
     var alignmentPatternQuads = [];
@@ -3021,23 +3023,25 @@ function locate(matrix) {
             topRight: { x: topRight.x, y: topRight.y },
         });
     }
-    // We normally use the center of the quads as the location of the tracking points, which is optimal for most cases and will account
-    // for a skew in the image. However, In some cases, a slight skew might not be real and instead be caused by image compression
-    // errors and/or low resolution. For those cases, we'd be better off centering the point exactly in the middle of the black area. We
-    // compute and return the location data for the naively centered points as it is little additional work and allows for multiple
-    // attempts at decoding harder images.
-    var midTopRight = recenterLocation(matrix, topRight);
-    var midTopLeft = recenterLocation(matrix, topLeft);
-    var midBottomLeft = recenterLocation(matrix, bottomLeft);
-    var centeredAlignment = findAlignmentPattern(matrix, alignmentPatternQuads, midTopRight, midTopLeft, midBottomLeft);
-    if (centeredAlignment) {
-        result.push({
-            alignmentPattern: { x: centeredAlignment.alignmentPattern.x, y: centeredAlignment.alignmentPattern.y },
-            bottomLeft: { x: midBottomLeft.x, y: midBottomLeft.y },
-            topLeft: { x: midTopLeft.x, y: midTopLeft.y },
-            topRight: { x: midTopRight.x, y: midTopRight.y },
-            dimension: centeredAlignment.dimension,
-        });
+    if (tryHarder) {
+        // We normally use the center of the quads as the location of the tracking points, which is optimal for most cases and will account
+        // for a skew in the image. However, In some cases, a slight skew might not be real and instead be caused by image compression
+        // errors and/or low resolution. For those cases, we'd be better off centering the point exactly in the middle of the black area. We
+        // compute and return the location data for the naively centered points as it is little additional work and allows for multiple
+        // attempts at decoding harder images.
+        var midTopRight = recenterLocation(matrix, topRight);
+        var midTopLeft = recenterLocation(matrix, topLeft);
+        var midBottomLeft = recenterLocation(matrix, bottomLeft);
+        var centeredAlignment = findAlignmentPattern(matrix, alignmentPatternQuads, midTopRight, midTopLeft, midBottomLeft);
+        if (centeredAlignment) {
+            result.push({
+                alignmentPattern: { x: centeredAlignment.alignmentPattern.x, y: centeredAlignment.alignmentPattern.y },
+                bottomLeft: { x: midBottomLeft.x, y: midBottomLeft.y },
+                topLeft: { x: midTopLeft.x, y: midTopLeft.y },
+                topRight: { x: midTopRight.x, y: midTopRight.y },
+                dimension: centeredAlignment.dimension,
+            });
+        }
     }
     if (result.length === 0) {
         return null;
